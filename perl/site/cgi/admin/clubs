@@ -1,0 +1,193 @@
+#!/usr/bin/perl -w
+
+# This is meant to suppress these annoying "subroutine redefined" warnings
+no warnings "redefine";
+
+use strict;
+
+use CGI;
+
+use DBI;
+
+use Gamla::TextStream::Out::File;
+
+use Technion::Seminars::Config;
+use Technion::Seminars::Layout;
+use Technion::Seminars::SlashUrl;
+use Technion::Seminars::UserMan;
+use Technion::Seminars::TypeMan;
+use Technion::Seminars::DBI;
+
+use Technion::Seminars::MDDA::OneTable;
+
+
+my $q = CGI->new();
+
+sub check_url
+{
+    my $url = shift;
+
+    my $verdict = ($url =~ /^admin\/clubs\/(\w+\/(((subjects\/(\w+\/)?)|(seminars\/([^\/]+\/))))?)?/) ? 1 : 0;
+    
+    return ($verdict, "admin/clubs/");
+}
+
+# Make sure our URL ends with a slash.
+my $base_url = &normalize_url($q, \&check_url, "https");
+
+my (%cookie);
+my ($user, $password, $user_id);
+my $admin_level = "readonly";
+
+my $user_man = Technion::Seminars::UserMan->new();
+
+if (%cookie = $q->cookie('seminars_auth'))
+{
+    $user = $cookie{'user'};
+    $password = $cookie{'password'};
+
+    ($admin_level, $user_id) = $user_man->get_admin_level($user, $password);
+}
+
+print $q->header();
+
+my $title = "Club Management";
+
+my $base_url_wo_last_component = $base_url;
+$base_url_wo_last_component =~ s/\/[^\/]*$//;
+
+my $layout = 
+    Technion::Seminars::Layout->new(
+        'path' => $base_url_wo_last_component,
+        'title' => $title,
+        'admin_level' => $admin_level,
+    );
+
+my $o = Gamla::TextStream::Out::File->new(\*STDOUT);
+
+
+my $draw_page = sub {
+    my $o = shift;
+
+    my $mdda = 
+        Technion::Seminars::MDDA::OneTable->new(
+            'clubs', 
+            $config{'database'}->{'tables'}->{'clubs'}
+        );
+    
+
+    if ($admin_level eq "readonly")
+    {
+        return;
+    }
+
+    my @url_components = split(/\//, $base_url);
+
+    my $admin = shift(@url_components);
+    my $clubs = shift(@url_components);
+    
+    if (scalar(@url_components) == 0)
+    {
+        # The root of the sub-site
+
+        $o->print("<h1>Clubs Administration</h1>\n\n");
+
+        my $dbh = Technion::Seminars::DBI->new();
+        my ($sth, $rv, $data);
+
+        if ($admin_level eq "site")
+        {
+            $o->print("<h2><a href=\"./new/\">Add a New Club</a></h2>\n");
+            $o->print("<h2>Existing Clubs</h2>\n");
+        }
+
+        my ($query);
+
+        if ($admin_level eq "site")
+        {
+            $query = "SELECT Clubname, Name FROM clubs ORDER BY clubs.Name";
+        }
+        else
+        {
+            $sth = $dbh->prepare("SELECT User_ID FROM users WHERE Username = " . $dbh->quote($user));
+            $rv = $sth->execute();
+            $data = $sth->fetchrow_arrayref();
+            
+            my $user_id = $data->[0];
+            
+            $query = "SELECT Clubs.Clubname, Clubs.Name FROM clubs, permissions WHERE ((clubs.Club_ID = permissions.Club_ID) AND (permissions.User_ID = $user_id)) ORDER BY clubs.Name";
+        }
+        $sth = $dbh->prepare($query);
+        $rv = $sth->execute();
+        while ($data = $sth->fetchrow_arrayref())
+        {
+            $o->print("<a href=\"./" . $data->[0] . "/\">" .
+                CGI::escapeHTML($data->[1]) . 
+                "</a><br />\n");                
+        }
+    }
+    else
+    {
+        my $clubname = shift(@url_components);
+        if ($clubname eq "new")
+        {
+            if ($admin_level eq "site")
+            {
+                if (scalar(@url_components) == 0)
+                {
+                    $o->print("<h1>Add a New Club</h1>\n\n");
+                
+                    $mdda->render_add_form($o);
+                }
+                else
+                {
+                    # Let's process the form request.
+                    $mdda->perform_add_operation($q, $o, "The club was added");
+                    
+                }
+            }
+        }
+        else
+        {
+            my $dbh = Technion::Seminars::DBI->new();
+            my $sth = $dbh->prepare("SELECT Club_ID FROM clubs WHERE Clubname = '$clubname'");
+            my $rv = $sth->execute();
+            
+            my $row = $sth->fetchrow_arrayref();
+            if ($row)
+            {
+                my $club_id = $row->[0];
+                
+                my @club_permissions;
+                
+                if (($admin_level eq "site") || 
+                    (eval { 
+                        @club_permissions = $user_man->can_edit_club(
+                            $user_id, 
+                            $club_id
+                            ) ; 
+                        $club_permissions[0] 
+                        }
+                    ))
+                {
+                    if (scalar(@url_components) == 0)
+                    {
+                        $mdda->render_edit_form(
+                            $o, 
+                            "Club_ID", 
+                            $club_id,
+                            'field-title' => $clubname,
+                        );
+                    }                
+                }
+            }
+            else
+            {
+            }
+        }
+    }
+
+    
+};
+
+$layout->render($o, $draw_page);

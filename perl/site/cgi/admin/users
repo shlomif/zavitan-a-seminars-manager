@@ -1,0 +1,244 @@
+#!/usr/bin/perl -w
+
+# This is meant to suppress these annoying "subroutine redefined" warnings
+no warnings "redefine";
+
+use strict;
+
+use CGI;
+
+use DBI;
+
+use Technion::Seminars::Config;
+use Technion::Seminars::Layout;
+use Technion::Seminars::SlashUrl;
+use Technion::Seminars::UserMan;
+use Technion::Seminars::TypeMan;
+use Technion::Seminars::DBI;
+use Technion::Seminars::MDDA::OneTable;
+
+use Gamla::TextStream::Out::File;
+
+my $q = CGI->new();
+
+sub check_url
+{
+    my $url = shift;
+
+    my $verdict = ($url =~ /^admin\/users\/(([A-Za-z_]*\/(edit\.cgi)?)|(new\/(add\.cgi)?))?$/) ? 1 : 0;
+    
+    return ($verdict, "admin/users/");
+}
+
+# Make sure our URL ends with a slash.
+my $base_url = &normalize_url($q, \&check_url, "https");
+
+my (%cookie);
+my ($user, $password, $user_id);
+my $admin_level = "readonly";
+
+my $user_man = Technion::Seminars::UserMan->new();
+
+if (%cookie = $q->cookie('seminars_auth'))
+{
+    $user = $cookie{'user'};
+    $password = $cookie{'password'};
+
+    ($admin_level, $user_id) = $user_man->get_admin_level($user, $password);
+}
+
+print $q->header();
+
+my $title = "User Management";
+
+my $base_url_wo_last_component = $base_url;
+$base_url_wo_last_component =~ s/\/[^\/]*$//;
+
+my $layout = 
+    Technion::Seminars::Layout->new(
+        'path' => $base_url_wo_last_component,
+        'title' => $title,
+        'admin_level' => $admin_level,
+    );
+
+my $o = Gamla::TextStream::Out::File->new(\*STDOUT);
+
+my $draw_page = sub {
+    my $o = shift;
+
+    my $mdda = 
+        Technion::Seminars::MDDA::OneTable->new(
+            'users', 
+            $config{'database'}->{'tables'}->{'users'}
+        );
+   
+    # Only site-wide admins can enter this page
+    if ($admin_level eq "site")
+    {
+        if ($base_url eq "admin/users/")
+        {
+            # Output a list of users with links
+            
+            $o->print("<h1>$title</h1>\n\n");
+            $o->print("<h2><a href=\"./new/\">Add a New User</a></h2>\n");
+            $o->print("<h2>Existing Users</h2>\n");
+
+            my $dbh = Technion::Seminars::DBI->new();
+            my $sth = $dbh->prepare("SELECT * FROM users ORDER BY Username");
+            my $rv = $sth->execute();
+            while (my $row = $sth->fetchrow_hashref())
+            {
+                $o->print("<p>\n<a href=\"./" . $row->{'Username'} . "/\">");
+                $o->print($row->{'Username'} . " (" .$row->{'Name'} . ")</a>\n");
+                $o->print("</p>\n\n");
+            }
+        }
+        elsif ($base_url eq "admin/users/new/")
+        {
+            # Output a form with which one can add a new user.
+
+            $o->print("<h1>Add a New User</h1>\n\n");
+
+            $mdda->render_add_form($o);
+        }
+        elsif ($base_url eq "admin/users/new/add.cgi")
+        {
+            $mdda->perform_add_operation($o, $q, "The user was added");
+        }
+        elsif ($base_url =~ m/^admin\/users\/(\w+)\/$/)
+        {
+            # Display a form to edit the current user.
+            my $username = $1;
+
+            $mdda->render_edit_form($o, "Username", $username);
+        }
+        elsif ($base_url =~ m/^admin\/users\/(\w+)\/edit.cgi$/)
+        {
+            my $dbh = Technion::Seminars::DBI->new();
+            my $user_id = $q->param("User_ID");
+            my $sth = $dbh->prepare("SELECT count(*) FROM users WHERE User_ID = $user_id");
+            my $rv = $sth->execute();
+
+            my $data;
+
+            $data = $sth->fetchrow_arrayref();
+
+            if ($data->[0] == "0")
+            {
+                $o->print("<h1>Error - User ID not found!</h1>\n\n<p>The user ID $user_id was not found on this server.</p>\n\n");
+            }
+            if ($q->param("action") eq "Delete")
+            {
+                $sth = $dbh->prepare("DELETE FROM users WHERE User_ID = $user_id");
+                $rv = $sth->execute();
+                $dbh->prepare("DELETE FROM permissions WHERE User_ID = $user_id");
+                $rv = $sth->execute();
+
+                $o->print("<h1>OK</h1>\n\n<p>the user was deleted</p>\n");
+            }
+            else
+            {
+                # Updating the user fields
+
+                my (@query_fields, @query_values);
+                my $type_man = Technion::Seminars::TypeMan::get_type_man();
+                
+                foreach my $field (@{$config{'database'}->{'tables'}->{'users'}->{'fields'}})
+                {
+                    # This variable would be assigned the value of the field
+                    my $value = "";
+                    # Determine how to input the field
+                    my $input = $field->{'input'} || { 'type' => "normal", };
+                     
+                    if ($input->{'primary_key'})
+                    {
+                        next;
+                    }
+                    if ($field->{'display'}->{'type'} eq "constant")
+                    {
+                        next;
+                    }
+                    
+                    {
+                        # Retrieve the value from the CGI field
+                        $value = $q->param($field->{'name'});
+                        # Check that its type agrees with it
+                        my ($status, $error_string) = ($type_man->check_value($field->{'type'}, $field->{'type_params'}, $value));
+                        # If it does not.
+                        if ($status)
+                        {
+                            # Throw an error
+
+                            # Substitute the field name into the '$F' macro.
+                            $error_string =~ s/\$F/$field->{'name'}/ge;
+                            
+                            die ($field->{'name'} . " could not be accepted: $error_string");
+                        }
+
+                        # Get the input constraints.
+                        my $input_params_arr = $field->{'input_params'};
+                        if ($input_params_arr)
+                        {
+                            # Iterate over the input constraints
+                            foreach my $input_params ((ref($input_params_arr) eq "ARRAY") ? (@$input_params_arr) : ($input_params_arr))
+                            {
+                                # Check if this field is required to be unique
+                                if ($input_params->{'unique'})
+                                {
+                                    # TODO : Change the "users" table name
+                                    # to an input variable
+
+                                    # Query the database for the existence of the same value
+                                    my $sth = $dbh->prepare("SELECT count(*) FROM users WHERE " . $field->{'name'} . " = " . $dbh->quote($value));
+                                    my $rv = $sth->execute();
+                                    my $ary_ref = $sth->fetchrow_arrayref();
+                                    # If such value exists
+                                    if ($ary_ref->[0] > 0)
+                                    {
+                                        die ($field->{'name'} ." must be unique while a duplicate entry already exists!");
+                                    }
+                                }
+                                
+                                # This specifies that the input must not
+                                # match a regexp.
+                                if ($input_params->{'not_match'})
+                                {
+                                    my $pattern = $input_params->{'not_match'};
+                                    if ($value =~ /$pattern/)
+                                    {
+                                        die $input_params->{'comment'};
+                                    }
+                                }
+
+                                # This specifies that the input must match
+                                # a regexp.
+                                if ($input_params->{'match'})
+                                {
+                                    my $pattern = $input_params->{'match'};
+                                    if ($value !~ /$pattern/)
+                                    {
+                                        die $input_params->{'comment'};
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    # Push the field name
+                    push @query_fields, $field->{'name'};
+
+                    push @query_values, $value;
+                }
+
+                my $edit_query = "UPDATE users SET " . join(",", map { $query_fields[$_] . "=" . $dbh->quote($query_values[$_]) } (0 .. $#query_fields)) . " WHERE User_ID = $user_id";
+                
+                $sth = $dbh->prepare($edit_query);
+                my $rv = $sth->execute();
+                
+                $o->print("<h1>OK</h1>\n\n<p>the user was updated</p>\n");
+            }
+        }
+    }
+};
+
+$layout->render($o, $draw_page);
