@@ -1,7 +1,0 @@
-# AuthName "Seminars Admins"
-# AuthType Basic
-# AuthUserFile /home/shlomi/Docs/Univ/Seminars/from_cvs/perl/site/users
-
-SSLRequireSSL
-
-# require valid-user
