@@ -31,7 +31,8 @@ BEGIN {
         # The URL of the HTTPS Admin Tree
         'https_url' =>
             {
-                'url' => "https://$ip_addr/seminars/",
+                #'url' => "https://$ip_addr/seminars/",
+                'url' => "http://$ip_addr/seminars/",
                 'host' => "$ip_addr",
                 'path' => "seminars",
             },
