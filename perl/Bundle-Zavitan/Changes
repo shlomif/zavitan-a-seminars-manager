@@ -3,6 +3,8 @@ v0.2.1 (2013-12-23)
     - Remove trailing space.
     - Fix perl -c . See:
         - https://github.com/CPAN-API/metacpan-web/issues/973
+    - Add t/00-compile.t .
+    - Add t/pod.t .
 
 v0.2.0 (2003-Jun-24) - Bundle Created
 
