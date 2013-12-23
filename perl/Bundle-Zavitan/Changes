@@ -1,0 +1,8 @@
+v0.2.1 (2013-12-23)
+    - Made Makefile.PL non-executable.
+    - Remove trailing space.
+    - Fix perl -c . See:
+        - https://github.com/CPAN-API/metacpan-web/issues/973
+
+v0.2.0 (2003-Jun-24) - Bundle Created
+

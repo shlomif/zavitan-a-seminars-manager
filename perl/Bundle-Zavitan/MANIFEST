@@ -1,0 +1,7 @@
+Changes
+MANIFEST
+Makefile.PL
+README
+Zavitan.pm
+t/00-compile.t
+t/pod.t
