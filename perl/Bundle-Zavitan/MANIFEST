@@ -1,8 +1,9 @@
-Changes
-MANIFEST
 Build.PL
-META.yml
+Changes
+LICENSE
+MANIFEST
 META.json
+META.yml
 README
 lib/Bundle/Zavitan.pm
 t/00-compile.t

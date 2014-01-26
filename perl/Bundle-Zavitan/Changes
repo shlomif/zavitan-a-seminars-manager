@@ -1,4 +1,9 @@
-v0.2.1 (2013-12-23)
+v0.2.2  2014-01-26
+    - Convert to Build.PL and placed the .pm under lib/.
+        - Kwalitee.
+    - Add LICENSE files and sections.
+
+v0.2.1  2013-12-23
     - Made Makefile.PL non-executable.
     - Remove trailing space.
     - Fix perl -c . See:
@@ -6,5 +11,6 @@ v0.2.1 (2013-12-23)
     - Add t/00-compile.t .
     - Add t/pod.t .
 
-v0.2.0 (2003-Jun-24) - Bundle Created
+v0.2.0  2003-Jun-24
+    - Bundle Created
 
