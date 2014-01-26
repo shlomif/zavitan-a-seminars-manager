@@ -1,4 +1,9 @@
+perl/Bundle-Zavitan/Build
+perl/Bundle-Zavitan/_build
+perl/Bundle-Zavitan/blib
 perl/Bundle-Zavitan/Bundle-Zavitan-*
+perl/Bundle-Zavitan/META.json
+perl/Bundle-Zavitan/META.yml
 perl/Bundle-Zavitan/MYMETA.json
 perl/Bundle-Zavitan/MYMETA.yml
 perl/Bundle-Zavitan/Makefile
