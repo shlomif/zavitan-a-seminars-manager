@@ -48,7 +48,7 @@ Date::Parse
 
 DBI
 
-DBD-Mysql
+DBD::mysql
 
 Math::BigInt
 

@@ -1,7 +1,9 @@
 Changes
 MANIFEST
-Makefile.PL
+Build.PL
+META.yml
+META.json
 README
-Zavitan.pm
+lib/Bundle/Zavitan.pm
 t/00-compile.t
 t/pod.t
